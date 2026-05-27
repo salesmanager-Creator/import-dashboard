@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Import Data — Live Analytics Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #07111f;
+    --bg2: #0d1b2e;
+    --card: rgba(255,255,255,0.04);
+    --card-hover: rgba(255,255,255,0.07);
+    --border: rgba(255,255,255,0.08);
+    --border-accent: rgba(99,179,237,0.4);
+    --text: #e2e8f0;
+    --muted: #718096;
+    --dim: #3a4a5c;
+    --a1: #63b3ed;
+    --a2: #68d391;
+    --a3: #f6ad55;
+    --a4: #fc8181;
+    --a5: #b794f4;
+    --a6: #76e4f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; min-height: 100vh; }
+  
+  /* Header */
+  .header { background: rgba(7,17,31,0.97); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 56px; position: sticky; top: 0; z-index: 200; backdrop-filter: blur(20px); flex-wrap: wrap; gap: 8px; }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--a2); box-shadow: 0 0 8px var(--a2); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .logo { font-weight: 700; font-size: 16px; letter-spacing: -.02em; }
+  .badge { font-size: 11px; color: var(--muted); background: rgba(255,255,255,0.05); padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .clock-box { text-align: right; }
+  .clock-time { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--a1); letter-spacing: .02em; }
+  .clock-date { font-size: 10px; color: var(--muted); }
+  .btn-refresh { background: rgba(99,179,237,0.1); border: 1px solid rgba(99,179,237,0.3); border-radius: 8px; padding: 6px 14px; color: var(--a1); cursor: pointer; font-size: 11px; display: flex; align-items: center; gap: 6px; transition: background .2s; }
+  .btn-refresh:hover { background: rgba(99,179,237,0.2); }
+  .spin { display: inline-block; }
+  .spinning { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Layout */
+  .main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  .status-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
+  .status-text { font-size: 11px; color: var(--muted); }
+  .btn-clear { background: rgba(252,129,129,0.1); border: 1px solid rgba(252,129,129,0.3); border-radius: 6px; padding: 4px 12px; color: var(--a4); cursor: pointer; font-size: 11px; display: none; }
+
+  /* Filter panel */
+  .filter-panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; }
+  .filter-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 12px; }
+  .filter-grid { display: flex; flex-wrap: wrap; gap: 12px; }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; min-width: 130px; flex: 1; }
+  .filter-group label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+  .filter-group select, .filter-group input { background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--text); font-size: 12px; outline: none; cursor: pointer; width: 100%; }
+  .filter-group select:focus, .filter-group input:focus { border-color: var(--a1); }
+  .filter-group select option { background: #0d1b2e; }
+
+  /* KPI Cards */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px 22px; position: relative; overflow: hidden; transition: border-color .2s, transform .2s; cursor: default; }
+  .kpi-card:hover { border-color: var(--border-accent); transform: translateY(-2px); }
+  .kpi-glow { position: absolute; top: 0; right: 0; width: 80px; height: 80px; border-radius: 0 16px 0 80px; opacity: .12; }
+  .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px; }
+  .kpi-value { font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+  .kpi-sub { font-size: 12px; color: var(--muted); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab { padding: 8px 18px; background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); cursor: pointer; font-size: 12px; border-radius: 6px 6px 0 0; transition: color .15s, border-color .15s, background .15s; }
+  .tab.active { background: rgba(99,179,237,0.15); border-bottom-color: var(--a1); color: var(--a1); font-weight: 600; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Charts grid */
+  .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  .chart-grid.wide { grid-template-columns: 1fr; }
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
+  .panel-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 16px; }
+
+  /* Horizontal bars */
+  .hbar { margin-bottom: 10px; }
+  .hbar-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .hbar-label { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62%; }
+  .hbar-val { font-size: 12px; font-weight: 600; }
+  .hbar-track { background: rgba(255,255,255,0.06); border-radius: 4px; height: 6px; overflow: hidden; }
+  .hbar-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
+
+  /* Donut */
+  .donut-wrap { display: flex; align-items: center; gap: 16px; }
+  .donut-legend { flex: 1; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+  .legend-name { font-size: 11px; color: var(--muted); flex: 1; }
+  .legend-num { font-size: 11px; color: var(--text); font-weight: 600; }
+
+  /* Table */
+  .table-toolbar { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .search-input { flex: 1; min-width: 200px; background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; color: var(--text); font-size: 12px; outline: none; }
+  .search-input:focus { border-color: var(--a1); }
+  .records-count { font-size: 11px; color: var(--muted); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  thead th { padding: 10px 14px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border); white-space: nowrap; cursor: pointer; user-select: none; transition: color .15s; }
+  thead th:hover { color: var(--a1); }
+  thead th.sorted { color: var(--a1); }
+  tbody tr { cursor: pointer; transition: background .12s; }
+  tbody tr:hover { background: rgba(255,255,255,0.03); }
+  tbody td { padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .tag { border-radius: 4px; padding: 2px 7px; font-size: 10px; font-weight: 500; }
+  .tag-blue { background: rgba(99,179,237,0.12); border: 1px solid rgba(99,179,237,0.25); color: var(--a1); }
+  .tag-green { background: rgba(104,211,145,0.12); border: 1px solid rgba(104,211,145,0.25); color: var(--a2); }
+  .qty-cell { color: var(--a3); font-weight: 600; text-align: right; }
+  .seller-cell { color: var(--a1); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Pagination */
+  .pagination { padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 8px; }
+  .page-info { font-size: 11px; color: var(--muted); }
+  .page-btns { display: flex; gap: 5px; }
+  .page-btn { padding: 4px 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--border); border-radius: 6px; color: var(--text); cursor: pointer; font-size: 11px; transition: background .15s; }
+  .page-btn:hover:not(:disabled) { background: rgba(255,255,255,0.1); }
+  .page-btn.active { background: rgba(99,179,237,0.2); border-color: var(--a1); color: var(--a1); }
+  .page-btn:disabled { color: var(--dim); cursor: default; }
+
+  /* Heatmap */
+  .heatmap-grid { display: flex; flex-wrap: wrap; gap: 3px; }
+  .heat-cell { width: 16px; height: 16px; border-radius: 3px; cursor: default; }
+  .heatmap-legend { font-size: 10px; color: var(--muted); margin-top: 8px; }
+
+  /* Loading */
+  #loading-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 999; }
+  .loader-ring { width: 48px; height: 48px; border: 3px solid rgba(99,179,237,0.2); border-top-color: var(--a1); border-radius: 50%; animation: spin .8s linear infinite; }
+  .loader-text { color: var(--muted); font-size: 13px; }
+  #error-banner { display: none; background: rgba(252,129,129,0.12); border: 1px solid rgba(252,129,129,0.3); border-radius: 10px; padding: 14px 20px; margin-bottom: 16px; color: var(--a4); font-size: 12px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+  /* Category bars */
+  .cat-bar { margin-bottom: 14px; }
+  .cat-bar-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .cat-name { font-size: 12px; font-weight: 600; }
+  .cat-stat { font-size: 11px; }
+  .cat-track { background: rgba(255,255,255,0.06); border-radius: 4px; height: 8px; overflow: hidden; }
+  .cat-fill { height: 100%; border-radius: 4px; }
+
+  /* Seller cards */
+  .seller-card { margin-bottom: 14px; padding: 12px 14px; background: rgba(255,255,255,0.03); border-radius: 10px; border: 1px solid rgba(255,255,255,0.06); }
+  .seller-card-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .seller-card-name { font-size: 12px; font-weight: 600; }
+  .seller-card-stat { font-size: 12px; font-weight: 700; }
+  .seller-card-sub { display: flex; gap: 12px; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .seller-mini-track { background: rgba(255,255,255,0.06); border-radius: 3px; height: 4px; overflow: hidden; }
+  .seller-mini-fill { height: 100%; border-radius: 3px; }
+
+  /* Country flow */
+  .flow-item { margin-bottom: 14px; padding: 10px 12px; background: rgba(255,255,255,0.02); border-radius: 8px; }
+  .flow-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .flow-name { font-size: 12px; font-weight: 600; }
+  .flow-val { font-size: 11px; }
+  .flow-sub { font-size: 10px; color: var(--muted); }
+
+  /* Buyer cards */
+  .buyer-card { margin-bottom: 12px; padding: 10px 12px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+  .buyer-card-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .buyer-name { font-size: 11px; font-weight: 600; }
+  .buyer-stat { font-size: 11px; font-weight: 700; }
+  .buyer-sub { font-size: 10px; color: var(--muted); }
+
+  @media (max-width: 600px) {
+    .main { padding: 12px; }
+    .header { padding: 0 12px; }
+    .clock-time { font-size: 14px; }
+    .kpi-value { font-size: 22px; }
+    .chart-grid { grid-template-columns: 1fr; }
+    .tabs { overflow-x: auto; }
+    .tab { white-space: nowrap; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="loader-ring"></div>
+  <div class="loader-text">Loading data from Google Sheets…</div>
+</div>
+
+<div class="header">
+  <div class="header-left">
+    <div class="pulse"></div>
+    <span class="logo">IMPORT DATA</span>
+    <span class="badge">LIVE ANALYTICS DASHBOARD</span>
+  </div>
+  <div class="header-right">
+    <div class="clock-box">
+      <div class="clock-time" id="clock">--:--:--</div>
+      <div class="clock-date" id="clock-date"></div>
+    </div>
+    <button class="btn-refresh" id="btn-refresh" onclick="manualRefresh()">
+      <span class="spin" id="spin-icon">⟳</span>
+      <span id="refresh-label">Refresh</span>
+    </button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="status-bar">
+    <div class="status-text" id="status-text">Loading…</div>
+    <button class="btn-clear" id="btn-clear" onclick="clearAllFilters()">Clear filters ×</button>
+  </div>
+
+  <div id="error-banner"></div>
+
+  <!-- Filters -->
+  <div class="filter-panel">
+    <div class="filter-title">⚙ Filters — all work simultaneously · dashboard updates instantly</div>
+    <div class="filter-grid">
+      <div class="filter-group">
+        <label>Seller</label>
+        <select id="f-seller" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Seller Country</label>
+        <select id="f-sellerCountry" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Buyer Country</label>
+        <select id="f-buyerCountry" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Buyer</label>
+        <select id="f-buyer" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Product (keyword)</label>
+        <input type="text" id="f-product" placeholder="e.g. KYOCERA" oninput="applyFilters()">
+      </div>
+      <div class="filter-group">
+        <label>UOM</label>
+        <select id="f-uom" onchange="applyFilters()"><option value="">All</option></select>
+      </div>
+      <div class="filter-group">
+        <label>Date From (DD-MM-YYYY)</label>
+        <input type="text" id="f-dateFrom" placeholder="01-01-2026" oninput="applyFilters()">
+      </div>
+      <div class="filter-group">
+        <label>Date To (DD-MM-YYYY)</label>
+        <input type="text" id="f-dateTo" placeholder="31-03-2026" oninput="applyFilters()">
+      </div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid" id="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-glow" style="background:linear-gradient(135deg,#4facfe,#00f2fe)"></div>
+      <div class="kpi-label">Total Qty Sold</div>
+      <div class="kpi-value" id="kpi-qty" style="color:var(--a1)">—</div>
+      <div class="kpi-sub">Units across all UOMs</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-glow" style="background:linear-gradient(135deg,#11998e,#38ef7d)"></div>
+      <div class="kpi-label">Transactions</div>
+      <div class="kpi-value" id="kpi-tx" style="color:var(--a2)">—</div>
+      <div class="kpi-sub" id="kpi-tx-sub">of 0 total records</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-glow" style="background:linear-gradient(135deg,#f093fb,#f5576c)"></div>
+      <div class="kpi-label">Active Sellers</div>
+      <div class="kpi-value" id="kpi-sellers" style="color:var(--a5)">—</div>
+      <div class="kpi-sub">Unique suppliers</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-glow" style="background:linear-gradient(135deg,#667eea,#764ba2)"></div>
+      <div class="kpi-label">Source Countries</div>
+      <div class="kpi-value" id="kpi-countries" style="color:var(--a5)">—</div>
+      <div class="kpi-sub">Seller origins</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-glow" style="background:linear-gradient(135deg,#fa709a,#fee140)"></div>
+      <div class="kpi-label">Avg Qty / Order</div>
+      <div class="kpi-value" id="kpi-avg" style="color:var(--a3)">—</div>
+      <div class="kpi-sub">Per transaction</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-glow" style="background:linear-gradient(135deg,#43e97b,#38f9d7)"></div>
+      <div class="kpi-label">Buyer Countries</div>
+      <div class="kpi-value" id="kpi-bctry" style="color:var(--a2)">—</div>
+      <div class="kpi-sub">Destination markets</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('overview',this)">Overview</button>
+    <button class="tab" onclick="switchTab('products',this)">Products</button>
+    <button class="tab" onclick="switchTab('sellers',this)">Sellers</button>
+    <button class="tab" onclick="switchTab('trends',this)">Trends</button>
+    <button class="tab" onclick="switchTab('table',this)">Transaction Table</button>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div id="tab-overview" class="tab-content active">
+    <div class="chart-grid">
+      <div class="panel">
+        <div class="panel-title">Seller Country — Qty Sold</div>
+        <div id="country-bars"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Monthly Transaction Count</div>
+        <div style="position:relative;height:140px;margin-bottom:10px">
+          <canvas id="chart-monthly" role="img" aria-label="Monthly transaction count bar chart"></canvas>
+        </div>
+        <div id="monthly-peak" style="font-size:11px;color:var(--muted);text-align:center"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Qty by Unit of Measure</div>
+        <div class="donut-wrap">
+          <canvas id="chart-uom" width="120" height="120" role="img" aria-label="UOM donut chart" style="flex-shrink:0"></canvas>
+          <div class="donut-legend" id="uom-legend"></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Top Sellers by Qty Sold</div>
+        <div id="seller-bars"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PRODUCTS TAB -->
+  <div id="tab-products" class="tab-content">
+    <div class="chart-grid">
+      <div class="panel" style="grid-column:1/-1">
+        <div class="panel-title">Top Products by Qty Sold</div>
+        <div id="product-bars"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Product Qty Distribution</div>
+        <div style="display:flex;justify-content:center;margin-bottom:12px">
+          <canvas id="chart-products-donut" width="160" height="160" role="img" aria-label="Product distribution donut"></canvas>
+        </div>
+        <div id="products-donut-legend" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Product Categories (by Brand)</div>
+        <div id="cat-bars"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SELLERS TAB -->
+  <div id="tab-sellers" class="tab-content">
+    <div class="chart-grid">
+      <div class="panel">
+        <div class="panel-title">Seller Performance (Qty)</div>
+        <div id="seller-cards"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Seller Country → Buyer Country Flow</div>
+        <div id="country-flow"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Buyer Analysis (Qty)</div>
+        <div id="buyer-cards"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TRENDS TAB -->
+  <div id="tab-trends" class="tab-content">
+    <div class="chart-grid">
+      <div class="panel" style="grid-column:1/-1">
+        <div class="panel-title">Transaction Count by Month</div>
+        <div style="position:relative;height:200px">
+          <canvas id="chart-trends" role="img" aria-label="Monthly trends bar chart"></canvas>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Daily Transaction Heatmap</div>
+        <div class="heatmap-grid" id="heatmap"></div>
+        <div class="heatmap-legend">Each cell = one day · Darker = more transactions</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Qty Bucket Distribution</div>
+        <div id="qty-buckets"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE TAB -->
+  <div id="tab-table" class="tab-content">
+    <div class="panel" style="padding:0">
+      <div class="table-toolbar">
+        <input class="search-input" id="table-search" type="text" placeholder="🔍 Search product, seller, buyer…" oninput="renderTable()">
+        <span class="records-count" id="table-count"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="setSort('date')">Date <span id="sort-date"></span></th>
+              <th onclick="setSort('seller')">Seller <span id="sort-seller"></span></th>
+              <th onclick="setSort('sellerCountry')">Seller Country <span id="sort-sellerCountry"></span></th>
+              <th onclick="setSort('product')">Product <span id="sort-product"></span></th>
+              <th onclick="setSort('qty')" style="text-align:right">Qty <span id="sort-qty"></span></th>
+              <th onclick="setSort('uom')">UOM <span id="sort-uom"></span></th>
+              <th onclick="setSort('buyer')">Buyer <span id="sort-buyer"></span></th>
+              <th onclick="setSort('buyerCountry')">Buyer Country <span id="sort-buyerCountry"></span></th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <span class="page-info" id="page-info"></span>
+        <div class="page-btns" id="page-btns"></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:24px;text-align:center;font-size:10px;color:var(--dim)">
+    Source: Google Sheets · "IMPORT DATA" · Spreadsheet ID: 1tFbbAf8s9qsDq4pKTDcRnCuF7mOOTVWaZim727zLNwE · Auto-refresh every 30s
+  </div>
+</div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────────────────────────
+// Google Sheet published as CSV. Steps to enable:
+// 1. Open the sheet → File → Share → Publish to web
+// 2. Select Sheet1, format CSV, click Publish
+// 3. Replace the URL below with your published CSV link
+// The Sheet ID (1tFbbAf8s9qsDq4pKTDcRnCuF7mOOTVWaZim727zLNwE) is already set.
+const SHEET_ID = '1tFbbAf8s9qsDq4pKTDcRnCuF7mOOTVWaZim727zLNwE';
+const SHEET_NAME = 'Sheet1';
+const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
+const REFRESH_MS = 30000;
+
+// ─── COLORS ───────────────────────────────────────────────────────────────────
+const C = ['#63b3ed','#68d391','#f6ad55','#fc8181','#b794f4','#76e4f7','#fbb6ce','#90cdf4','#9ae6b4','#fef08a'];
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let allData = [];
+let filtered = [];
+let sortKey = 'date', sortDir = 'desc';
+let currentPage = 0;
+const PAGE_SIZE = 10;
+let refreshTimer = null;
+let charts = {};
+
+// ─── CLOCK ────────────────────────────────────────────────────────────────────
+function tickClock() {
+  const n = new Date();
+  document.getElementById('clock').textContent = n.toLocaleTimeString();
+  document.getElementById('clock-date').textContent = n.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+}
+setInterval(tickClock, 1000); tickClock();
+
+// ─── CSV FETCH & PARSE ────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const rows = [];
+  // skip header row (row 0)
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCSVLine(lines[i]);
+    if (cols.length < 8) continue;
+    const dateStr = (cols[0]||'').replace(/^"|"$/g,'').trim();
+    const product = (cols[1]||'').replace(/^"|"$/g,'').trim();
+    const buyer   = (cols[2]||'').replace(/^"|"$/g,'').trim();
+    const bCtry   = (cols[3]||'').replace(/^"|"$/g,'').trim();
+    const sCtry   = (cols[4]||'').replace(/^"|"$/g,'').trim();
+    const seller  = (cols[5]||'').replace(/^"|"$/g,'').trim();
+    const uom     = (cols[6]||'').replace(/^"|"$/g,'').trim();
+    const qtyRaw  = (cols[7]||'').replace(/^"|"$/g,'').replace(/,/g,'').trim();
+    const qty     = parseFloat(qtyRaw) || 0;
+    if (!dateStr || !product || !seller) continue;
+    rows.push({ date: dateStr, product, buyer, buyerCountry: bCtry, sellerCountry: sCtry, seller, uom, qty });
+  }
+  return rows;
+}
+
+function splitCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let c of line) {
+    if (c === '"') { inQ = !inQ; }
+    else if (c === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseDate(d) {
+  if (!d) return new Date(0);
+  const parts = d.split('-');
+  if (parts.length === 3) return new Date(parseInt(parts[2]), parseInt(parts[1])-1, parseInt(parts[0]));
+  return new Date(d);
+}
+
+// ─── LOAD DATA ────────────────────────────────────────────────────────────────
+async function loadData(isManual) {
+  setRefreshUI(true);
+  hideError();
+  try {
+    const res = await fetch(CSV_URL + '&t=' + Date.now());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+      throw new Error('Sheet is not published as CSV. See setup instructions inside the file.');
+    }
+    allData = parseCSV(text);
+    if (allData.length === 0) throw new Error('No data rows found — check sheet name is "Sheet1".');
+    populateFilters();
+    applyFilters();
+    document.getElementById('loading-overlay').style.display = 'none';
+    document.getElementById('status-text').textContent =
+      `Last refreshed: ${new Date().toLocaleTimeString()} · ${allData.length} records loaded · Auto-refresh every 30s`;
+  } catch(e) {
+    showError(e.message);
+    document.getElementById('loading-overlay').style.display = 'none';
+    if (allData.length > 0) { applyFilters(); }
+  } finally {
+    setRefreshUI(false);
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.style.display = 'block';
+  el.innerHTML = `⚠ Could not load live data: ${msg}<br>
+  <strong>To enable live data:</strong> Open the Google Sheet → File → Share → Publish to web → Sheet1 → CSV → Publish. Then reload this page.`;
+}
+function hideError() { document.getElementById('error-banner').style.display = 'none'; }
+function setRefreshUI(on) {
+  document.getElementById('spin-icon').classList.toggle('spinning', on);
+  document.getElementById('refresh-label').textContent = on ? 'Refreshing…' : 'Refresh';
+}
+function manualRefresh() { loadData(true); }
+
+// Auto-refresh
+function startAutoRefresh() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(() => loadData(false), REFRESH_MS);
+}
+
+// ─── FILTER POPULATION ────────────────────────────────────────────────────────
+function populateFilters() {
+  const uniq = key => [...new Set(allData.map(r => r[key]).filter(Boolean))].sort();
+  fillSelect('f-seller', uniq('seller'));
+  fillSelect('f-sellerCountry', uniq('sellerCountry'));
+  fillSelect('f-buyerCountry', uniq('buyerCountry'));
+  fillSelect('f-buyer', uniq('buyer'));
+  fillSelect('f-uom', uniq('uom'));
+}
+function fillSelect(id, opts) {
+  const el = document.getElementById(id);
+  const cur = el.value;
+  el.innerHTML = '<option value="">All</option>' + opts.map(o => `<option value="${o}"${o===cur?' selected':''}>${o}</option>`).join('');
+}
+
+// ─── APPLY FILTERS ────────────────────────────────────────────────────────────
+function applyFilters() {
+  const fSeller    = document.getElementById('f-seller').value;
+  const fSCntry    = document.getElementById('f-sellerCountry').value;
+  const fBCntry    = document.getElementById('f-buyerCountry').value;
+  const fBuyer     = document.getElementById('f-buyer').value;
+  const fProduct   = document.getElementById('f-product').value.trim().toUpperCase();
+  const fUom       = document.getElementById('f-uom').value;
+  const fFrom      = document.getElementById('f-dateFrom').value.trim();
+  const fTo        = document.getElementById('f-dateTo').value.trim();
+  const fromDate   = fFrom ? parseDate(fFrom) : null;
+  const toDate     = fTo   ? parseDate(fTo)   : null;
+
+  filtered = allData.filter(r => {
+    if (fSeller  && r.seller !== fSeller) return false;
+    if (fSCntry  && r.sellerCountry !== fSCntry) return false;
+    if (fBCntry  && r.buyerCountry !== fBCntry) return false;
+    if (fBuyer   && r.buyer !== fBuyer) return false;
+    if (fProduct && !r.product.toUpperCase().includes(fProduct)) return false;
+    if (fUom     && r.uom !== fUom) return false;
+    if (fromDate) { const d = parseDate(r.date); if (d < fromDate) return false; }
+    if (toDate)   { const d = parseDate(r.date); if (d > toDate)   return false; }
+    return true;
+  });
+
+  const activeCount = [fSeller,fSCntry,fBCntry,fBuyer,fProduct,fUom,fFrom,fTo].filter(Boolean).length;
+  const clearBtn = document.getElementById('btn-clear');
+  clearBtn.style.display = activeCount > 0 ? 'block' : 'none';
+  clearBtn.textContent = `Clear ${activeCount} filter${activeCount>1?'s':''} ×`;
+
+  currentPage = 0;
+  updateKPIs();
+  updateCharts();
+  renderTable();
+}
+
+function clearAllFilters() {
+  ['f-seller','f-sellerCountry','f-buyerCountry','f-buyer','f-uom'].forEach(id => document.getElementById(id).value = '');
+  ['f-product','f-dateFrom','f-dateTo'].forEach(id => document.getElementById(id).value = '');
+  applyFilters();
+}
+
+// ─── KPIs ─────────────────────────────────────────────────────────────────────
+function updateKPIs() {
+  const totalQty = filtered.reduce((s,r)=>s+r.qty,0);
+  const totalTx  = filtered.length;
+  const sellers  = new Set(filtered.map(r=>r.seller)).size;
+  const sCtries  = new Set(filtered.map(r=>r.sellerCountry)).size;
+  const bCtries  = new Set(filtered.map(r=>r.buyerCountry)).size;
+  const avgQty   = totalTx > 0 ? (totalQty/totalTx) : 0;
+  document.getElementById('kpi-qty').textContent     = fmtNum(totalQty);
+  document.getElementById('kpi-tx').textContent      = fmtNum(totalTx);
+  document.getElementById('kpi-tx-sub').textContent  = `of ${allData.length} total records`;
+  document.getElementById('kpi-sellers').textContent = sellers;
+  document.getElementById('kpi-countries').textContent = sCtries;
+  document.getElementById('kpi-avg').textContent     = avgQty.toFixed(1);
+  document.getElementById('kpi-bctry').textContent   = bCtries;
+}
+
+// ─── CHARTS ───────────────────────────────────────────────────────────────────
+function sumBy(arr, keyFn, valFn) {
+  return arr.reduce((acc, item) => {
+    const k = keyFn(item) || 'Unknown';
+    acc[k] = (acc[k]||0) + valFn(item);
+    return acc;
+  }, {});
+}
+function topN(obj, n) {
+  return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,n);
+}
+function fmtNum(n) { return n.toLocaleString(undefined,{maximumFractionDigits:1}); }
+
+function updateCharts() {
+  updateOverview();
+  updateProducts();
+  updateSellers();
+  updateTrends();
+}
+
+// ── Overview ──
+function updateOverview() {
+  // Country bars
+  const cData = topN(sumBy(filtered, r=>r.sellerCountry, r=>r.qty), 8);
+  const maxC = cData[0]?.[1] || 1;
+  document.getElementById('country-bars').innerHTML = cData.map(([label,val],i)=>hbarHTML(label, val, maxC, C[i%C.length], fmtNum(val))).join('');
+
+  // Monthly chart
+  const monthly = sumBy(filtered, r=>{ const d=parseDate(r.date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }, ()=>1);
+  const mEntries = Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0]));
+  const mLabels = mEntries.map(([k])=>k.replace(/\d+-/,''));
+  const mVals   = mEntries.map(([,v])=>v);
+  buildBarChart('chart-monthly', mLabels, mVals, '#63b3ed');
+  if (mEntries.length > 0) {
+    const peak = mEntries.reduce((a,b)=>a[1]>b[1]?a:b);
+    document.getElementById('monthly-peak').textContent = `Peak: ${peak[0].replace(/\d+-/,'')} · ${peak[1]} transactions`;
+  }
+
+  // UOM donut
+  const uomData = topN(sumBy(filtered, r=>r.uom||'N/A', r=>r.qty), 6);
+  buildDoughnut('chart-uom', uomData);
+  document.getElementById('uom-legend').innerHTML = uomData.map(([label,val],i)=>
+    `<div class="legend-item"><div class="legend-dot" style="background:${C[i%C.length]}"></div><span class="legend-name">${label}</span><span class="legend-num">${fmtNum(val)}</span></div>`
+  ).join('');
+
+  // Seller bars
+  const sData = topN(sumBy(filtered, r=>r.seller, r=>r.qty), 6);
+  const maxS = sData[0]?.[1] || 1;
+  document.getElementById('seller-bars').innerHTML = sData.map(([label,val],i)=>hbarHTML(label, val, maxS, C[i%C.length], fmtNum(val))).join('');
+}
+
+// ── Products ──
+function updateProducts() {
+  const pData = topN(sumBy(filtered, r=>r.product.substring(0,32), r=>r.qty), 10);
+  const maxP  = pData[0]?.[1] || 1;
+  document.getElementById('product-bars').innerHTML = pData.map(([label,val],i)=>hbarHTML(label, val, maxP, C[i%C.length], fmtNum(val))).join('');
+
+  // Donut top 6
+  const p6 = pData.slice(0,6);
+  buildDoughnut('chart-products-donut', p6);
+  document.getElementById('products-donut-legend').innerHTML = p6.map(([label],i)=>
+    `<div style="display:flex;align-items:center;gap:4px"><div style="width:8px;height:8px;border-radius:2px;background:${C[i%C.length]}"></div><span style="font-size:10px;color:var(--muted)">${label.substring(0,22)}</span></div>`
+  ).join('');
+
+  // Category breakdown
+  const cats = [['KYOCERA','#63b3ed'],['RICOH','#68d391'],['CANON','#f6ad55'],['SHREDDER','#fc8181'],['DUPLO','#b794f4'],['OTHER','#76e4f7']];
+  const totalQty = filtered.reduce((s,r)=>s+r.qty,0)||1;
+  document.getElementById('cat-bars').innerHTML = cats.map(([cat,color])=>{
+    const catRows = cat==='OTHER'
+      ? filtered.filter(r=>!['KYOCERA','RICOH','CANON','SHREDDER','DUPLO'].some(c=>r.product.toUpperCase().includes(c)))
+      : filtered.filter(r=>r.product.toUpperCase().includes(cat));
+    const val = catRows.reduce((s,r)=>s+r.qty,0);
+    if (val===0) return '';
+    const pct = Math.min(100,(val/totalQty)*100);
+    return `<div class="cat-bar">
+      <div class="cat-bar-header"><span class="cat-name">${cat}</span><span class="cat-stat" style="color:${color}">${fmtNum(val)} units · ${catRows.length} txns</span></div>
+      <div class="cat-track"><div class="cat-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Sellers ──
+function updateSellers() {
+  const sData = topN(sumBy(filtered, r=>r.seller, r=>r.qty), 8);
+  const maxSQ = sData[0]?.[1] || 1;
+  document.getElementById('seller-cards').innerHTML = sData.map(([seller,val],i)=>{
+    const txns = filtered.filter(r=>r.seller===seller).length;
+    const pct = (val/maxSQ)*100;
+    return `<div class="seller-card">
+      <div class="seller-card-header"><span class="seller-card-name">${seller}</span><span class="seller-card-stat" style="color:${C[i%C.length]}">${fmtNum(val)} units</span></div>
+      <div class="seller-card-sub"><span>${txns} transactions</span></div>
+      <div class="seller-mini-track"><div class="seller-mini-fill" style="width:${pct}%;background:${C[i%C.length]}"></div></div>
+    </div>`;
+  }).join('');
+
+  // Country flow
+  const sCtries = [...new Set(filtered.map(r=>r.sellerCountry))].slice(0,8);
+  document.getElementById('country-flow').innerHTML = sCtries.map((sc,i)=>{
+    const scRows = filtered.filter(r=>r.sellerCountry===sc);
+    const buyers = [...new Set(scRows.map(r=>r.buyerCountry))];
+    const val = scRows.reduce((s,r)=>s+r.qty,0);
+    return `<div class="flow-item">
+      <div class="flow-header"><span class="flow-name">${sc}</span><span class="flow-val" style="color:${C[i%C.length]}">${fmtNum(val)} units</span></div>
+      <div class="flow-sub">→ ${buyers.join(', ')}</div>
+    </div>`;
+  }).join('');
+
+  // Buyers
+  const bData = topN(sumBy(filtered, r=>r.buyer, r=>r.qty), 6);
+  document.getElementById('buyer-cards').innerHTML = bData.map(([buyer,val],i)=>{
+    const txns = filtered.filter(r=>r.buyer===buyer).length;
+    return `<div class="buyer-card">
+      <div class="buyer-card-header"><span class="buyer-name">${buyer}</span><span class="buyer-stat" style="color:${C[i%C.length]}">${fmtNum(val)} units</span></div>
+      <div class="buyer-sub">${txns} orders</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Trends ──
+function updateTrends() {
+  const monthly = sumBy(filtered, r=>{ const d=parseDate(r.date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }, ()=>1);
+  const mEntries = Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0]));
+  buildBarChart('chart-trends', mEntries.map(([k])=>k), mEntries.map(([,v])=>v), '#63b3ed');
+
+  // Heatmap
+  const daily = sumBy(filtered, r=>r.date, ()=>1);
+  const maxD = Math.max(...Object.values(daily), 1);
+  document.getElementById('heatmap').innerHTML = Object.entries(daily).sort((a,b)=>parseDate(a[0])-parseDate(b[0])).map(([date,count])=>{
+    const op = 0.1 + 0.9*(count/maxD);
+    return `<div class="heat-cell" title="${date}: ${count} txns" style="background:rgba(99,179,237,${op.toFixed(2)});border:1px solid rgba(99,179,237,${(op*0.5).toFixed(2)})"></div>`;
+  }).join('');
+
+  // Qty buckets
+  const buckets = {'0–5':0,'6–10':0,'11–50':0,'51–100':0,'101+':0};
+  filtered.forEach(r=>{
+    if(r.qty<=5) buckets['0–5']++;
+    else if(r.qty<=10) buckets['6–10']++;
+    else if(r.qty<=50) buckets['11–50']++;
+    else if(r.qty<=100) buckets['51–100']++;
+    else buckets['101+']++;
+  });
+  const maxB = Math.max(...Object.values(buckets),1);
+  document.getElementById('qty-buckets').innerHTML = Object.entries(buckets).map(([k,v],i)=>hbarHTML(`Qty ${k}`, v, maxB, C[i%C.length], `${v} txns`)).join('');
+}
+
+// ─── CHART BUILDERS ───────────────────────────────────────────────────────────
+function buildBarChart(id, labels, data, color) {
+  if (charts[id]) { charts[id].destroy(); }
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: color+'99', borderColor: color, borderWidth: 1, borderRadius: 4 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} txns` } } },
+      scales: {
+        x: { ticks: { color: '#718096', font: { size: 10 }, autoSkip: true, maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color: '#718096', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.06)' } }
+      }
+    }
+  });
+}
+
+function buildDoughnut(id, entries) {
+  if (charts[id]) { charts[id].destroy(); }
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: entries.map(([k])=>k),
+      datasets: [{ data: entries.map(([,v])=>v), backgroundColor: entries.map((_,i)=>C[i%C.length]+'cc'), borderColor: '#07111f', borderWidth: 2 }]
+    },
+    options: {
+      cutout: '62%',
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmtNum(ctx.parsed)}` } } }
+    }
+  });
+}
+
+// ─── HORIZONTAL BAR HTML ──────────────────────────────────────────────────────
+function hbarHTML(label, val, max, color, display) {
+  const pct = Math.min(100, (val/max)*100);
+  return `<div class="hbar">
+    <div class="hbar-row"><span class="hbar-label" title="${label}">${label}</span><span class="hbar-val" style="color:${color}">${display}</span></div>
+    <div class="hbar-track"><div class="hbar-fill" style="width:${pct}%;background:${color}"></div></div>
+  </div>`;
+}
+
+// ─── TABLE ────────────────────────────────────────────────────────────────────
+function setSort(key) {
+  if (sortKey === key) sortDir = sortDir==='asc'?'desc':'asc';
+  else { sortKey = key; sortDir = 'desc'; }
+  ['date','seller','sellerCountry','product','qty','uom','buyer','buyerCountry'].forEach(k=>{
+    const el = document.getElementById('sort-'+k);
+    if(el) el.textContent = sortKey===k ? (sortDir==='asc'?'↑':'↓') : '↕';
+  });
+  renderTable();
+}
+
+function renderTable() {
+  const search = (document.getElementById('table-search').value||'').toLowerCase();
+  let rows = filtered.filter(r => !search || r.product.toLowerCase().includes(search) || r.seller.toLowerCase().includes(search) || r.buyer.toLowerCase().includes(search));
+
+  rows = [...rows].sort((a,b)=>{
+    let va = a[sortKey], vb = b[sortKey];
+    if (sortKey==='date') { va = parseDate(va); vb = parseDate(vb); }
+    if (sortKey==='qty')  { va = Number(va); vb = Number(vb); }
+    if (sortDir==='asc') return va > vb ? 1 : -1;
+    return va < vb ? 1 : -1;
+  });
+
+  const total = rows.length;
+  const totalPages = Math.max(1, Math.ceil(total/PAGE_SIZE));
+  if (currentPage >= totalPages) currentPage = 0;
+  const page = rows.slice(currentPage*PAGE_SIZE, (currentPage+1)*PAGE_SIZE);
+
+  document.getElementById('table-count').textContent = `${total} records · Page ${currentPage+1} of ${totalPages}`;
+  document.getElementById('page-info').textContent = `Showing ${currentPage*PAGE_SIZE+1}–${Math.min((currentPage+1)*PAGE_SIZE,total)} of ${total}`;
+
+  document.getElementById('table-body').innerHTML = page.map(r=>`
+    <tr>
+      <td>${r.date}</td>
+      <td class="seller-cell">${r.seller}</td>
+      <td><span class="tag tag-blue">${r.sellerCountry}</span></td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.product}">${r.product}</td>
+      <td class="qty-cell">${fmtNum(r.qty)}</td>
+      <td style="color:var(--muted)">${r.uom||'—'}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.buyer}">${r.buyer}</td>
+      <td><span class="tag tag-green">${r.buyerCountry}</span></td>
+    </tr>`).join('');
+
+  // Pagination buttons
+  const maxBtns = 5;
+  const start = Math.max(0, Math.min(totalPages-maxBtns, currentPage-2));
+  let btns = `<button class="page-btn" onclick="goPage(0)" ${currentPage===0?'disabled':''}>«</button>
+              <button class="page-btn" onclick="goPage(${currentPage-1})" ${currentPage===0?'disabled':''}>‹</button>`;
+  for (let p=start; p<Math.min(start+maxBtns,totalPages); p++) {
+    btns += `<button class="page-btn ${p===currentPage?'active':''}" onclick="goPage(${p})">${p+1}</button>`;
+  }
+  btns += `<button class="page-btn" onclick="goPage(${currentPage+1})" ${currentPage>=totalPages-1?'disabled':''}>›</button>
+           <button class="page-btn" onclick="goPage(${totalPages-1})" ${currentPage>=totalPages-1?'disabled':''}>»</button>`;
+  document.getElementById('page-btns').innerHTML = btns;
+}
+
+function goPage(p) { currentPage = p; renderTable(); }
+
+// ─── TAB SWITCH ───────────────────────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+loadData(false);
+startAutoRefresh();
+</script>
+</body>
+</html>
